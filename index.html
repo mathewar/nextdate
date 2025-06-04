@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NextDate</title>
+    <!-- Google Fonts: Playfair Display for headings, Lato for body -->
+    <link href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+    <!-- Font Awesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Flatpickr CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <!-- Flatpickr JS -->
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <style>
+        /* Custom styles for Flatpickr input */
+        .flatpickr-input {
+            /* This input is now primarily for Flatpickr's internal use,
+               so we can make it visually less prominent or hidden if preferred.
+               Keeping some styling for consistency, but it won't be directly clicked. */
+            @apply w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500;
+        }
+        body {
+            font-family: 'Lato', sans-serif; /* Sophisticated body font */
+            background-color: #f0f4f8; /* Light blue-gray background */
+        }
+        h1, h2, h3, h4 {
+            font-family: 'Playfair Display', serif; /* Sophisticated heading font */
+        }
+        /* Custom Flatpickr day styling (no longer directly used for common calendar, but kept for individual pickers) */
+        .flatpickr-day.bg-green-300 {
+            background-color: #a7f3d0; /* Tailwind green-300 */
+            color: #065f46; /* Tailwind green-900 */
+            font-weight: bold;
+            border-radius: 9999px; /* rounded-full */
+        }
+        .flatpickr-day.bg-gray-200 {
+            background-color: #e5e7eb; /* Tailwind gray-200 */
+            color: #6b7280; /* Tailwind gray-500 */
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex flex-col min-h-screen">
+    <div class="container mx-auto p-4 sm:p-6 lg:p-8 flex-grow">
+        <h1 class="text-4xl font-extrabold text-center text-blue-800 mb-8 sm:mb-10 rounded-lg p-4 bg-white shadow-lg">
+            🗓️ NextDate: Find Common Availability
+        </h1>
+
+        <!-- Add New Person Section -->
+        <div class="bg-white p-6 rounded-lg shadow-md mb-8">
+            <h2 class="text-2xl font-semibold text-gray-800 mb-4">
+                <i class="fas fa-user-plus mr-2"></i> Add New Person
+            </h2>
+            <div class="flex flex-col sm:flex-row gap-4">
+                <input type="text" id="personNameInput" placeholder="Enter person's name"
+                       class="flex-grow px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg">
+                <button id="addPersonBtn"
+                        class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-md shadow-lg transition duration-300 ease-in-out transform hover:scale-105 text-lg flex items-center justify-center">
+                    <i class="fas fa-plus-circle mr-2"></i> Add Person
+                </button>
+            </div>
+        </div>
+
+        <!-- People List Section -->
+        <div id="peopleList" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+            <!-- People cards will be dynamically added here -->
+        </div>
+
+        <!-- Common Dates Section -->
+        <div class="bg-white p-6 rounded-lg shadow-md mb-8">
+            <h2 class="text-2xl font-semibold text-gray-800 mb-4">
+                <i class="fas fa-users mr-2"></i> Common Available Dates
+            </h2>
+            <div id="commonDatesOutput" class="text-gray-700 text-lg mb-4">
+                <!-- Text list of common dates will go here -->
+                No common dates found yet. Add people and their availability!
+            </div>
+        </div>
+
+        <!-- Projected Availability Section -->
+        <div class="bg-white p-6 rounded-lg shadow-md">
+            <h2 class="text-2xl font-semibold text-gray-800 mb-4">
+                <i class="fas fa-chart-line mr-2"></i> Projected Availability
+            </h2>
+            <div class="mb-4">
+                <label for="projectedDateInput" class="block text-gray-700 text-sm font-bold mb-2">
+                    <i class="fas fa-calendar-day mr-1"></i> Select a Date for Projection:
+                </label>
+                <input type="text" id="projectedDateInput" placeholder="Select a date"
+                       class="flatpickr-input">
+            </div>
+            <div id="projectedAvailabilityOutput" class="text-gray-700 text-lg">
+                Select a date above to see projected availability.
+            </div>
+        </div>
+    </div>
+
+    <footer class="bg-blue-800 text-white text-center p-4 mt-8">
+        <p>&copy; 2025 NextDate. Built with ❤️ by Arun.</p>
+    </footer>
+
+    <script type="module">
+        // Data will now be stored in this in-memory array
+        let peopleData = []; // Array to store people and their dates
+        let flatpickrInstances = {}; // Object to store Flatpickr instances for each person
+        let commonDays = new Set(); // Global set to store common dates (YYYY-MM-DD strings)
+
+        // Helper function to generate unique IDs for people
+        function generateUniqueId() {
+            return 'person_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        }
+
+        // Helper function to convert a date string (YYYY-MM-DD) to Date object
+        function parseDate(dateString) {
+            const [year, month, day] = dateString.split('-').map(Number);
+            return new Date(year, month - 1, day); // Month is 0-indexed
+        }
+
+        // Helper function to format a Date object to "Day, DD MonYYYY" string
+        function formatDate(date) {
+            const options = { weekday: 'long', day: '2-digit', month: 'short', year: 'numeric' }; // Changed year to 'numeric'
+            return date.toLocaleDateString('en-US', options);
+        }
+
+        // Helper function to get all dates within a range (returns YYYY-MM-DD strings)
+        function getDatesInRange(startDateStr, endDateStr) {
+            const dates = new Set();
+            let currentDate = parseDate(startDateStr);
+            const endDate = parseDate(endDateStr);
+
+            while (currentDate <= endDate) {
+                dates.add(currentDate.toISOString().slice(0, 10)); // Store in YYYY-MM-DD for internal logic
+                currentDate.setDate(currentDate.getDate() + 1);
+            }
+            return dates;
+        }
+
+        // Function to render people and their dates
+        function renderPeople() {
+            const peopleListDiv = document.getElementById('peopleList');
+            peopleListDiv.innerHTML = ''; // Clear existing content
+
+            if (peopleData.length === 0) {
+                peopleListDiv.innerHTML = '<p class="text-center text-gray-600 col-span-full">No people added yet. Use the form above!</p>';
+                return;
+            }
+
+            peopleData.forEach(person => {
+                const personCard = document.createElement('div');
+                personCard.className = 'bg-white p-6 rounded-lg shadow-md relative';
+                personCard.innerHTML = `
+                    <button class="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-8 h-8 flex items-center justify-center text-xl font-bold"
+                            onclick="window.deletePerson('${person.id}')">
+                        &times;
+                    </button>
+                    <h3 class="text-xl font-semibold text-gray-800 mb-3">${person.name}</h3>
+                    <div class="mb-4">
+                        <label for="dateInput-${person.id}" class="block text-gray-700 text-sm font-bold mb-2">
+                            <i class="fas fa-calendar-alt mr-1"></i> Add Availability:
+                        </label>
+                        <input type="text" id="dateInput-${person.id}" class="flatpickr-input hidden"> <!-- Hidden input -->
+                        <button class="add-date-btn mt-2 bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md shadow-md transition duration-300 ease-in-out transform hover:scale-105 w-full flex items-center justify-center"
+                                data-person-id="${person.id}">
+                            <i class="fas fa-calendar-plus mr-2"></i> Select Date(s)
+                        </button>
+                    </div>
+                    <div class="dates-list">
+                        <h4 class="text-md font-medium text-gray-700 mb-2">
+                            <i class="fas fa-calendar-check mr-2"></i> Available Dates:
+                        </h4>
+                        <ul id="personDates-${person.id}" class="list-disc list-inside text-gray-600">
+                            ${person.dates.length > 0 ?
+                                person.dates.map((date, index) => `
+                                    <li class="flex justify-between items-center py-1">
+                                        <span class="flex items-center"><i class="far fa-calendar-alt mr-2"></i> ${formatDate(parseDate(date.split(' to ')[0]))} ${date.includes(' to ') ? 'to ' + formatDate(parseDate(date.split(' to ')[1])) : ''}</span>
+                                        <button class="ml-2 text-red-500 hover:text-red-700 text-lg"
+                                                onclick="window.deleteDate('${person.id}', ${index})">
+                                            &times;
+                                        </button>
+                                    </li>
+                                `).join('')
+                                : '<li class="text-gray-500">No dates added yet.</li>'
+                            }
+                        </ul>
+                    </div>
+                `;
+                peopleListDiv.appendChild(personCard);
+
+                // Initialize Flatpickr for the new date input and store its instance
+                const fp = flatpickr(document.getElementById(`dateInput-${person.id}`), {
+                    mode: "range",
+                    dateFormat: "Y-m-d", // Flatpickr still uses YYYY-MM-DD for internal value
+                    conjunction: " to ",
+                    altInput: false, // Set to false to hide the input and only use the button
+                    // Add onChange event to immediately add date and recalculate
+                    onChange: function(selectedDates, dateStr, instance) {
+                        if (dateStr) { // Ensure a date string is available
+                            addDateToPerson(person.id, dateStr);
+                            instance.clear(); // Clear flatpickr selection after adding
+                        }
+                    }
+                });
+                flatpickrInstances[person.id] = fp; // Store the Flatpickr instance
+            });
+        }
+
+        // Event delegation for dynamically added "Add Date" buttons
+        document.getElementById('peopleList').addEventListener('click', (event) => {
+            const clickedButton = event.target.closest('.add-date-btn');
+            if (clickedButton) {
+                const personId = clickedButton.dataset.personId;
+                if (flatpickrInstances[personId]) {
+                    // Always open the calendar when the button is clicked
+                    flatpickrInstances[personId].open();
+                }
+            }
+        });
+
+        // Function to add a new person (triggered by button click or Enter key)
+        function addNewPerson() {
+            const personNameInput = document.getElementById('personNameInput');
+            const name = personNameInput.value.trim();
+            if (name) {
+                const newPerson = { id: generateUniqueId(), name: name, dates: [] };
+                peopleData.push(newPerson);
+                personNameInput.value = ''; // Clear input
+                renderPeople();
+                calculateCommonDates();
+                // If a date is already selected in projectedDateInput, update its projection
+                const projectedDateInput = document.getElementById('projectedDateInput');
+                if (projectedDateInput && projectedDateInput._flatpickr && projectedDateInput._flatpickr.selectedDates.length > 0) {
+                    calculateProjectedAvailability(projectedDateInput._flatpickr.currentStr);
+                }
+            } else {
+                console.log("Please enter a person's name.");
+            }
+        }
+
+        // Event listener for adding a new person via button click
+        document.getElementById('addPersonBtn').addEventListener('click', addNewPerson);
+
+        // Event listener for adding a new person via Enter key in the input field
+        document.getElementById('personNameInput').addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                addNewPerson();
+            }
+        });
+
+        // Function to add a date to a person
+        function addDateToPerson(personId, dateString) {
+            const personIndex = peopleData.findIndex(p => p.id === personId);
+            if (personIndex > -1) {
+                peopleData[personIndex].dates.push(dateString);
+                renderPeople(); // Re-render to update the person's dates list
+                calculateCommonDates(); // Recalculate common dates immediately after adding
+                // If a date is already selected in projectedDateInput, update its projection
+                const projectedDateInput = document.getElementById('projectedDateInput');
+                if (projectedDateInput && projectedDateInput._flatpickr && projectedDateInput._flatpickr.selectedDates.length > 0) {
+                    calculateProjectedAvailability(projectedDateInput._flatpickr.currentStr);
+                }
+            }
+        }
+
+        // Function to delete a person (made global)
+        window.deletePerson = function(personId) {
+            peopleData = peopleData.filter(person => person.id !== personId);
+            renderPeople(); // Re-render to update the people list
+            calculateCommonDates(); // Recalculate common dates immediately after deleting
+            // If a date is already selected in projectedDateInput, update its projection
+            const projectedDateInput = document.getElementById('projectedDateInput');
+            if (projectedDateInput && projectedDateInput._flatpickr && projectedDateInput._flatpickr.selectedDates.length > 0) {
+                calculateProjectedAvailability(projectedDateInput._flatpickr.currentStr);
+            }
+        }
+
+        // Function to delete a date from a person (made global)
+        window.deleteDate = function(personId, dateIndex) {
+            const personIndex = peopleData.findIndex(p => p.id === personId);
+            if (personIndex > -1) {
+                peopleData[personIndex].dates.splice(dateIndex, 1); // Remove the date at the specified index
+                renderPeople(); // Re-render to update the person's dates list
+                calculateCommonDates(); // Recalculate common dates immediately after deleting
+                // If a date is already selected in projectedDateInput, update its projection
+                const projectedDateInput = document.getElementById('projectedDateInput');
+                if (projectedDateInput && projectedDateInput._flatpickr && projectedDateInput._flatpickr.selectedDates.length > 0) {
+                    calculateProjectedAvailability(projectedDateInput._flatpickr.currentStr);
+                }
+            }
+        }
+
+        // Function to calculate common dates
+        function calculateCommonDates() {
+            const commonDatesOutput = document.getElementById('commonDatesOutput');
+            commonDays.clear(); // Clear previous common days
+
+            if (peopleData.length === 0) {
+                commonDatesOutput.innerHTML = 'No common dates found yet. Add people and their availability!';
+                return;
+            }
+
+            let allPeopleAvailableDays = [];
+
+            // Convert each person's dates (single or range) into a set of individual days
+            peopleData.forEach(person => {
+                const personDays = new Set();
+                person.dates.forEach(dateString => {
+                    if (dateString.includes(' to ')) {
+                        const [startStr, endStr] = dateString.split(' to ');
+                        getDatesInRange(startStr, endStr).forEach(d => personDays.add(d));
+                    } else {
+                        personDays.add(dateString);
+                    }
+                });
+                allPeopleAvailableDays.push(personDays);
+            });
+
+            if (allPeopleAvailableDays.length === 0) {
+                commonDatesOutput.innerHTML = 'No common dates found yet. Add people and their availability!';
+                return;
+            }
+
+            // Find the intersection of all sets
+            commonDays = allPeopleAvailableDays[0]; // Start with the first person's days
+            for (let i = 1; i < allPeopleAvailableDays.length; i++) {
+                const nextPersonDays = allPeopleAvailableDays[i];
+                commonDays = new Set([...commonDays].filter(day => nextPersonDays.has(day)));
+            }
+
+            // Display the common dates text list
+            if (commonDays.size === 0) {
+                commonDatesOutput.innerHTML = 'No common dates found.';
+            } else {
+                const sortedCommonDays = Array.from(commonDays).sort();
+                commonDatesOutput.innerHTML = `
+                    <p class="mb-2">The following dates are available for everyone:</p>
+                    <ul class="list-none"> <!-- Changed list-disc to list-none -->
+                        ${sortedCommonDays.map(date => `<li><span class="flex items-center text-green-700 font-semibold">${formatDate(parseDate(date))}</span></li>`).join('')}
+                    </ul>
+                `;
+            }
+        }
+
+        // Function to calculate and display projected availability for a selected date
+        function calculateProjectedAvailability(selectedDateStr) {
+            const projectedAvailabilityOutput = document.getElementById('projectedAvailabilityOutput');
+            if (!selectedDateStr) {
+                projectedAvailabilityOutput.innerHTML = 'Select a date above to see projected availability.';
+                return;
+            }
+
+            const selectedDate = parseDate(selectedDateStr);
+            const formattedSelectedDateForCommonCheck = selectedDate.toISOString().slice(0, 10); // YYYY-MM-DD format
+            const selectedWeekday = selectedDate.getDay(); // 0 for Sunday, 1 for Monday, etc.
+
+            // Check for known common availability
+            if (commonDays.has(formattedSelectedDateForCommonCheck)) {
+                projectedAvailabilityOutput.innerHTML = `
+                    <p class="text-green-700 font-bold text-xl mb-2 p-2 rounded-md bg-green-100">
+                        <i class="fas fa-check-circle mr-2"></i> Everyone is available on ${formatDate(selectedDate)}!
+                    </p>
+                `;
+                return;
+            }
+
+            // If not commonly available, calculate heuristic
+            if (peopleData.length === 0) {
+                projectedAvailabilityOutput.innerHTML = 'No people added. Cannot calculate projected availability.';
+                return;
+            }
+
+            let jointProbability = 1.0;
+            let individualProjectionsHtml = `<ul class="list-none">`;
+
+            peopleData.forEach(person => {
+                let availableOnSelectedWeekdayCount = 0;
+                let personMinDate = null;
+                let personMaxDate = null;
+
+                // Collect all unique available days for the person and find their min/max dates
+                const personAllDays = new Set();
+                person.dates.forEach(dateString => {
+                    if (dateString.includes(' to ')) {
+                        const [startStr, endStr] = dateString.split(' to ');
+                        const start = parseDate(startStr);
+                        const end = parseDate(endStr);
+
+                        if (!personMinDate || start < personMinDate) personMinDate = start;
+                        if (!personMaxDate || end > personMaxDate) personMaxDate = end;
+
+                        getDatesInRange(startStr, endStr).forEach(d => {
+                            personAllDays.add(d);
+                            // Check if this specific day is the selected weekday
+                            if (parseDate(d).getDay() === selectedWeekday) {
+                                availableOnSelectedWeekdayCount++;
+                            }
+                        });
+                    } else {
+                        const date = parseDate(dateString);
+                        if (!personMinDate || date < personMinDate) personMinDate = date;
+                        if (!personMaxDate || date > personMaxDate) personMaxDate = date;
+                        personAllDays.add(dateString);
+                        // Check if this specific day is the selected weekday
+                        if (date.getDay() === selectedWeekday) {
+                            availableOnSelectedWeekdayCount++;
+                        }
+                    }
+                });
+
+                let totalSelectedWeekdaysInPersonRange = 0;
+                if (personMinDate && personMaxDate) {
+                    let tempDate = new Date(personMinDate);
+                    while (tempDate <= personMaxDate) {
+                        if (tempDate.getDay() === selectedWeekday) {
+                            totalSelectedWeekdaysInPersonRange++;
+                        }
+                        tempDate.setDate(tempDate.getDate() + 1);
+                    }
+                }
+
+                let projectedAvailability = 0;
+                if (totalSelectedWeekdaysInPersonRange > 0) {
+                    projectedAvailability = (availableOnSelectedWeekdayCount / totalSelectedWeekdaysInPersonRange) * 100; // As a percentage
+                }
+
+                // Update joint probability (convert percentage to decimal)
+                jointProbability *= (projectedAvailability / 100);
+
+                individualProjectionsHtml += `<li><span class="font-semibold">${person.name}:</span> ${projectedAvailability.toFixed(1)}% available on ${formatDate(selectedDate).split(',')[0]}.</li>`;
+            });
+
+            individualProjectionsHtml += `</ul>`;
+
+            let summaryClass = '';
+            let summaryText = '';
+            if (jointProbability * 100 > 50) {
+                summaryClass = 'text-green-700 bg-green-100';
+                summaryText = `There's a ${ (jointProbability * 100).toFixed(1) }% chance all participants are available on ${formatDate(selectedDate)}!`;
+            } else {
+                summaryClass = 'text-red-700 bg-red-100';
+                summaryText = `There's a ${ (jointProbability * 100).toFixed(1) }% chance all participants are available on ${formatDate(selectedDate)}. Consider other dates.`;
+            }
+
+            projectedAvailabilityOutput.innerHTML = `
+                <p class="font-bold text-xl mb-2 p-2 rounded-md ${summaryClass}">
+                    ${summaryText}
+                </p>
+                <p class="mb-2">Individual projected availability:</p>
+                ${individualProjectionsHtml}
+            `;
+        }
+
+
+        // Initial render when the page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            renderPeople();
+            calculateCommonDates();
+
+            // Initialize Flatpickr for the projected date input
+            const projectedDateInput = document.getElementById('projectedDateInput');
+            flatpickr(projectedDateInput, {
+                mode: "single",
+                dateFormat: "Y-m-d",
+                altInput: true,
+                altFormat: "F j, Y",
+                placeholder: "Select a date",
+                onChange: function(selectedDates, dateStr, instance) {
+                    calculateProjectedAvailability(dateStr);
+                }
+            });
+        });
+    </script>
+</body>
+</html>
